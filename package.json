@@ -1,0 +1,17 @@
+{
+  "name": "qr-pedidos-pro",
+  "version": "3.0.0",
+  "description": "Sistema de pedidos por codigo QR para restaurantes: cliente, cocina, mozo y administracion.",
+  "main": "iniciar.js",
+  "scripts": {
+    "start": "node iniciar.js",
+    "prueba": "node pruebas/pruebas.js",
+    "test": "node pruebas/pruebas.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "private": true,
+  "license": "UNLICENSED",
+  "author": "Josue Banda Aguirre"
+}
