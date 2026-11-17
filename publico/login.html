@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iniciar sesión — QR Pedidos</title>
+<link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="logo-grande">🍽️</div>
+  <h1>QR Pedidos</h1>
+  <p class="sub">Acceso para el personal del restaurante</p>
+  <div class="card">
+    <div class="error-login" id="error"></div>
+    <form id="form">
+      <div class="campo">
+        <label>Usuario</label>
+        <input id="usuario" autocomplete="username" required autofocus>
+      </div>
+      <div class="campo">
+        <label>Contraseña</label>
+        <input id="clave" type="password" autocomplete="current-password" required>
+      </div>
+      <button class="btn btn-rojo btn-full" type="submit" id="btn">Ingresar</button>
+    </form>
+  </div>
+  <p class="sub" style="margin-top:14px">Los clientes no necesitan cuenta:<br>solo escanean el QR de su mesa.</p>
+</div>
+<script>
+const DESTINO_POR_ROL = { admin:'/admin', cocina:'/cocina', mozo:'/mozo' };
+document.getElementById('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = document.getElementById('btn');
+  const err = document.getElementById('error');
+  btn.disabled = true; btn.textContent = 'Verificando...'; err.classList.remove('show');
+  try{
+    const r = await fetch('/api/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        usuario: document.getElementById('usuario').value.trim(),
+        clave: document.getElementById('clave').value
+      })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    const next = new URLSearchParams(location.search).get('next');
+    location.href = (next && next.startsWith('/')) ? next : (DESTINO_POR_ROL[d.rol] || '/');
+  }catch(ex){
+    err.textContent = '⚠️ ' + ex.message;
+    err.classList.add('show');
+    btn.disabled = false; btn.textContent = 'Ingresar';
+  }
+});
+</script>
+</body>
+</html>

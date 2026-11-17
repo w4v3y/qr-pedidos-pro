@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Administración — QR Pedidos</title>
+<link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<div class="panel">
+  <div class="topbar">
+    <div>
+      <h2>⚙️ Panel de Administración</h2>
+      <p class="sub">Carta, reportes de ventas y usuarios del sistema.</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <a class="btn btn-blanco btn-mini" href="/qr">🖨️ Imprimir QRs</a>
+      <button class="btn btn-carbon btn-mini" onclick="salir()">Salir</button>
+    </div>
+  </div>
+
+  <div class="tabs-admin">
+    <button class="tab-admin active" data-tab="reportes" onclick="verTab('reportes')">📊 Reportes</button>
+    <button class="tab-admin" data-tab="carta" onclick="verTab('carta')">🍽️ Carta</button>
+    <button class="tab-admin" data-tab="usuarios" onclick="verTab('usuarios')">👥 Usuarios</button>
+  </div>
+
+  <!-- ============ REPORTES ============ -->
+  <div id="tab-reportes">
+    <div style="margin-bottom:14px">
+      <select id="rango" style="max-width:220px" onchange="cargarReportes()">
+        <option value="hoy">Hoy</option>
+        <option value="7dias">Últimos 7 días</option>
+        <option value="todo">Todo el historial</option>
+      </select>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="valor" id="kpiVentas">—</div><div class="etiqueta">Ventas (S/)</div></div>
+      <div class="kpi"><div class="valor" id="kpiPedidos">—</div><div class="etiqueta">Pedidos entregados</div></div>
+      <div class="kpi"><div class="valor" id="kpiCurso">—</div><div class="etiqueta">Pedidos en curso</div></div>
+      <div class="kpi"><div class="valor" id="kpiTicket">—</div><div class="etiqueta">Ticket promedio (S/)</div></div>
+    </div>
+    <div class="grid-2">
+      <div>
+        <div class="seccion-titulo">🏆 Platos más vendidos</div>
+        <table class="tabla"><thead><tr><th>Plato</th><th>Cant.</th><th>Total S/</th></tr></thead><tbody id="tbTop"></tbody></table>
+      </div>
+      <div>
+        <div class="seccion-titulo">🪑 Ventas por mesa</div>
+        <table class="tabla"><thead><tr><th>Mesa</th><th>Pedidos</th><th>Total S/</th></tr></thead><tbody id="tbMesas"></tbody></table>
+      </div>
+    </div>
+    <div class="seccion-titulo">👨‍🍳 Rendimiento por empleado</div>
+    <table class="tabla"><thead><tr><th>Empleado</th><th>Rol</th><th>Cocinados</th><th>Entregados</th><th>Llamadas atendidas</th></tr></thead><tbody id="tbEmpleados"></tbody></table>
+    <div class="seccion-titulo">📅 Ventas por día (últimas 2 semanas)</div>
+    <table class="tabla"><thead><tr><th>Día</th><th>Pedidos</th><th>Total S/</th></tr></thead><tbody id="tbDias"></tbody></table>
+    <div class="seccion-titulo">🧾 Últimos pedidos</div>
+    <table class="tabla"><thead><tr><th>#</th><th>Mesa</th><th>Estado</th><th>Total S/</th><th>Fecha</th></tr></thead><tbody id="tbHist"></tbody></table>
+  </div>
+
+  <!-- ============ CARTA ============ -->
+  <div id="tab-carta" style="display:none">
+    <div class="card">
+      <div class="seccion-titulo" style="margin-top:0">➕ Agregar plato</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="nuevoCat" style="max-width:180px"></select>
+        <input id="nuevoEmoji" placeholder="🍽️" style="width:60px;padding:9px;border:1px solid var(--borde);border-radius:10px">
+        <input id="nuevoNombre" placeholder="Nombre del plato" style="flex:1;min-width:160px;padding:9px;border:1px solid var(--borde);border-radius:10px">
+        <input id="nuevoDesc" placeholder="Descripción" style="flex:2;min-width:200px;padding:9px;border:1px solid var(--borde);border-radius:10px">
+        <input id="nuevoPrecio" type="number" min="0" step="0.5" placeholder="S/" style="width:90px;padding:9px;border:1px solid var(--borde);border-radius:10px">
+        <button class="btn btn-rojo btn-mini" onclick="agregarPlato()">Agregar</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+        <input id="nuevaCategoria" placeholder="Nueva categoría (ej. Menú del día)" style="max-width:280px;padding:9px;border:1px solid var(--borde);border-radius:10px">
+        <button class="btn btn-ghost btn-mini" onclick="agregarCategoria()">+ Categoría</button>
+      </div>
+    </div>
+    <div id="listaCarta"></div>
+    <p class="sub" style="margin-top:10px">💡 Edita nombre, descripción, precio o emoji y presiona <b>Guardar</b>. "Ocultar" quita el plato de la carta sin borrarlo.</p>
+  </div>
+
+  <!-- ============ USUARIOS ============ -->
+  <div id="tab-usuarios" style="display:none">
+    <div class="grid-2">
+      <div class="card">
+        <div class="seccion-titulo" style="margin-top:0">👥 Usuarios del sistema</div>
+        <table class="tabla"><thead><tr><th>Usuario</th><th>Rol</th><th></th></tr></thead><tbody id="tbUsuarios"></tbody></table>
+      </div>
+      <div>
+        <div class="card">
+          <div class="seccion-titulo" style="margin-top:0">➕ Nuevo empleado</div>
+          <div class="campo"><label>Usuario (ej. carlos)</label><input id="nuUsuario"></div>
+          <div class="campo"><label>Nombre completo (opcional)</label><input id="nuNombre"></div>
+          <div class="campo"><label>Rol</label>
+            <select id="nuRol">
+              <option value="cocina">Cocina</option>
+              <option value="mozo">Mozo</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+          <div class="campo"><label>Contraseña (mín. 6 caracteres)</label><input id="nuClave" type="password"></div>
+          <button class="btn btn-rojo" onclick="crearUsuario()">Crear cuenta</button>
+        </div>
+        <div class="card">
+          <div class="seccion-titulo" style="margin-top:0">🔑 Cambiar contraseña</div>
+          <div class="campo"><label>Usuario</label><select id="claveUsuario"></select></div>
+          <div class="campo"><label>Nueva contraseña (mín. 6 caracteres)</label><input id="claveNueva" type="password"></div>
+          <button class="btn btn-rojo" onclick="guardarClave()">Guardar contraseña</button>
+        </div>
+        <div class="card">
+          <div class="seccion-titulo" style="margin-top:0">🌐 URL pública (acceso por internet)</div>
+          <p class="sub" style="margin-bottom:10px">Si usas el túnel (TUNEL.bat), pega aquí la dirección que te da Cloudflare. Los QRs y esta página la usarán en lugar de la IP del WiFi. Déjala vacía para volver al modo WiFi local.</p>
+          <div class="campo"><input id="urlPublica" placeholder="https://xxxxx.trycloudflare.com"></div>
+          <button class="btn btn-rojo" onclick="guardarUrlPublica()">Guardar URL</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let CARTA = { categorias: [], platos: [] };
+
+function verTab(t){
+  ['reportes','carta','usuarios'].forEach(x=>{
+    document.getElementById('tab-'+x).style.display = x===t?'block':'none';
+  });
+  document.querySelectorAll('.tab-admin').forEach(b=>b.classList.toggle('active', b.dataset.tab===t));
+  if (t==='reportes') cargarReportes();
+  if (t==='carta') cargarCarta();
+  if (t==='usuarios') cargarUsuarios();
+}
+
+/* ---------- Reportes ---------- */
+async function cargarReportes(){
+  const rango = document.getElementById('rango').value;
+  const r = await fetch('/api/admin/reportes?rango='+rango);
+  if (!r.ok) return manejarError(r);
+  const d = await r.json();
+  document.getElementById('kpiVentas').textContent = d.resumen.ventas.toFixed(2);
+  document.getElementById('kpiPedidos').textContent = d.resumen.pedidos;
+  document.getElementById('kpiCurso').textContent = d.resumen.enCurso;
+  document.getElementById('kpiTicket').textContent = d.resumen.pedidos ? (d.resumen.ventas/d.resumen.pedidos).toFixed(2) : '0.00';
+  llenar('tbTop', d.topPlatos.map(x=>[esc(x.nombre), x.cantidad, x.total.toFixed(2)]), 'Aún no hay ventas en este rango');
+  llenar('tbMesas', d.porMesa.map(x=>['Mesa '+esc(x.mesa), x.pedidos, x.total.toFixed(2)]), 'Aún no hay ventas en este rango');
+  llenar('tbDias', d.porDia.map(x=>[x.dia, x.pedidos, x.total.toFixed(2)]), 'Sin ventas en las últimas 2 semanas');
+  llenar('tbHist', d.historial.map(x=>['#'+x.id, 'Mesa '+esc(x.mesa), x.estado, x.total.toFixed(2), x.fecha]), 'Sin pedidos en este rango');
+  llenar('tbEmpleados', d.porEmpleado.map(x=>[
+    esc(x.usuario) + (x.nombre?` <span style="color:var(--gris)">(${esc(x.nombre)})</span>`:''),
+    `<span class="chip-rol">${x.rol}</span>`, x.cocinados, x.entregados, x.llamadas
+  ]), 'Sin empleados registrados');
+}
+function llenar(id, filas, vacio){
+  const tb = document.getElementById(id);
+  const cols = tb.closest('table').querySelectorAll('th').length;
+  tb.innerHTML = filas.length
+    ? filas.map(f=>'<tr>'+f.map(c=>`<td>${c}</td>`).join('')+'</tr>').join('')
+    : `<tr><td colspan="${cols}" style="color:var(--gris)">${vacio}</td></tr>`;
+}
+
+/* ---------- Carta ---------- */
+async function cargarCarta(){
+  const r = await fetch('/api/admin/carta');
+  if (!r.ok) return manejarError(r);
+  CARTA = await r.json();
+  document.getElementById('nuevoCat').innerHTML =
+    CARTA.categorias.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
+  document.getElementById('listaCarta').innerHTML = CARTA.categorias.map(c=>{
+    const platos = CARTA.platos.filter(p=>p.categoria_id===c.id);
+    return `<div class="seccion-titulo">${esc(c.nombre)}</div>
+    <table class="tabla"><thead><tr><th></th><th>Nombre</th><th>Descripción</th><th>Precio S/</th><th></th></tr></thead>
+    <tbody>${platos.map(p=>`
+      <tr class="${p.activo?'':'fila-inactiva'}" id="fila${p.id}">
+        <td><input class="in-emoji" id="em${p.id}" value="${esc(p.emoji)}"></td>
+        <td><input class="in-nombre" id="no${p.id}" value="${esc(p.nombre)}"></td>
+        <td><input class="in-desc" id="de${p.id}" value="${esc(p.descripcion)}"></td>
+        <td><input class="in-precio" id="pr${p.id}" type="number" min="0" step="0.5" value="${p.precio}"></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-rojo btn-mini" onclick="guardarPlato(${p.id})">Guardar</button>
+          <button class="btn btn-ghost btn-mini" onclick="alternarPlato(${p.id}, ${p.activo?0:1})">${p.activo?'Ocultar':'Mostrar'}</button>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="5" style="color:var(--gris)">Sin platos</td></tr>'}
+    </tbody></table>`;
+  }).join('');
+}
+async function guardarPlato(id){
+  const r = await fetch('/api/admin/platos/'+id, {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      emoji: document.getElementById('em'+id).value,
+      nombre: document.getElementById('no'+id).value,
+      descripcion: document.getElementById('de'+id).value,
+      precio: Number(document.getElementById('pr'+id).value)
+    })
+  });
+  r.ok ? toast('✅ Plato actualizado') : manejarError(r);
+}
+async function alternarPlato(id, activo){
+  const r = await fetch('/api/admin/platos/'+id, {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({activo})
+  });
+  if (r.ok){ toast(activo?'✅ Plato visible en la carta':'✅ Plato oculto'); cargarCarta(); }
+  else manejarError(r);
+}
+async function agregarPlato(){
+  const r = await fetch('/api/admin/platos', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      categoria_id: Number(document.getElementById('nuevoCat').value),
+      emoji: document.getElementById('nuevoEmoji').value || '🍽️',
+      nombre: document.getElementById('nuevoNombre').value,
+      descripcion: document.getElementById('nuevoDesc').value,
+      precio: Number(document.getElementById('nuevoPrecio').value)
+    })
+  });
+  if (r.ok){
+    toast('✅ Plato agregado a la carta');
+    ['nuevoNombre','nuevoDesc','nuevoPrecio','nuevoEmoji'].forEach(i=>document.getElementById(i).value='');
+    cargarCarta();
+  } else manejarError(r);
+}
+async function agregarCategoria(){
+  const nombre = document.getElementById('nuevaCategoria').value.trim();
+  if (!nombre) return;
+  const r = await fetch('/api/admin/categorias', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({nombre})
+  });
+  if (r.ok){ toast('✅ Categoría creada'); document.getElementById('nuevaCategoria').value=''; cargarCarta(); }
+  else manejarError(r);
+}
+
+/* ---------- Usuarios ---------- */
+async function cargarUsuarios(){
+  const r = await fetch('/api/admin/usuarios');
+  if (!r.ok) return manejarError(r);
+  const {usuarios} = await r.json();
+  document.getElementById('tbUsuarios').innerHTML =
+    usuarios.map(u=>`<tr>
+      <td>${esc(u.usuario)}${u.nombre?` <span style="color:var(--gris);font-size:12px">(${esc(u.nombre)})</span>`:''}</td>
+      <td><span class="chip-rol">${u.rol}</span></td>
+      <td><button class="btn btn-ghost btn-mini" onclick="eliminarUsuario('${esc(u.usuario)}')">Eliminar</button></td>
+    </tr>`).join('');
+  document.getElementById('claveUsuario').innerHTML =
+    usuarios.map(u=>`<option value="${esc(u.usuario)}">${esc(u.usuario)} (${u.rol})</option>`).join('');
+  const rc = await fetch('/api/admin/config');
+  if (rc.ok) document.getElementById('urlPublica').value = (await rc.json()).url_publica || '';
+}
+async function crearUsuario(){
+  const r = await fetch('/api/admin/usuarios', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      usuario: document.getElementById('nuUsuario').value,
+      nombre: document.getElementById('nuNombre').value,
+      rol: document.getElementById('nuRol').value,
+      clave: document.getElementById('nuClave').value
+    })
+  });
+  if (r.ok){
+    toast('✅ Cuenta creada');
+    ['nuUsuario','nuNombre','nuClave'].forEach(i=>document.getElementById(i).value='');
+    cargarUsuarios();
+  } else manejarError(r);
+}
+async function eliminarUsuario(usuario){
+  if (!confirm(`¿Eliminar la cuenta "${usuario}"? Sus estadísticas históricas se conservan en los reportes.`)) return;
+  const r = await fetch('/api/admin/usuarios/'+encodeURIComponent(usuario), {method:'DELETE'});
+  if (r.ok){ toast('✅ Cuenta eliminada'); cargarUsuarios(); }
+  else manejarError(r);
+}
+async function guardarUrlPublica(){
+  const r = await fetch('/api/admin/config', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({url_publica: document.getElementById('urlPublica').value})
+  });
+  if (r.ok){ toast('✅ URL pública guardada — los QRs ya la usan'); }
+  else manejarError(r);
+}
+async function guardarClave(){
+  const r = await fetch('/api/admin/usuarios/clave', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      usuario: document.getElementById('claveUsuario').value,
+      clave: document.getElementById('claveNueva').value
+    })
+  });
+  if (r.ok){ toast('✅ Contraseña actualizada'); document.getElementById('claveNueva').value=''; }
+  else manejarError(r);
+}
+
+/* ---------- Utilidades ---------- */
+async function manejarError(r){
+  if (r.status===401) return location.href='/login?next=/admin';
+  try{ toast('⚠️ '+(await r.json()).error); }catch(_){ toast('⚠️ Error'); }
+}
+async function salir(){ await fetch('/api/logout',{method:'POST'}); location.href='/login'; }
+function esc(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML.replace(/"/g,'&quot;'); }
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 2800);
+}
+cargarReportes();
+</script>
+</body>
+</html>

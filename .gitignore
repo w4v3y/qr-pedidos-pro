@@ -1,0 +1,9 @@
+node_modules/
+datos/
+datos-prueba/
+cloudflared.exe
+*.log
+*.db
+*.db-wal
+*.db-shm
+CLAVES-INICIALES.txt

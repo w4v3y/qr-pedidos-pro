@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cocina — QR Pedidos</title>
+<link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<div class="panel">
+  <div class="topbar">
+    <div>
+      <h2>👨‍🍳 Panel de Cocina</h2>
+      <p class="sub">Los pedidos de las mesas llegan aquí automáticamente.</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="estado-conexion" id="conexion">● Conectado</span>
+      <span class="quien" id="quien"></span>
+      <button class="btn btn-carbon btn-mini" onclick="salir()">Salir</button>
+    </div>
+  </div>
+  <div class="kpis" id="misStats" style="display:none">
+    <div class="kpi"><div class="valor" id="stHoy">—</div><div class="etiqueta">Cocinados hoy</div></div>
+    <div class="kpi"><div class="valor" id="stSemana">—</div><div class="etiqueta">Últimos 7 días</div></div>
+    <div class="kpi"><div class="valor" id="stTotal">—</div><div class="etiqueta">Total histórico</div></div>
+  </div>
+  <div class="ordenes" id="ordenes"></div>
+</div>
+
+<script>
+let idsConocidos = new Set(), primeraCarga = true;
+
+async function init(){
+  const r = await fetch('/api/yo');
+  if (r.ok){ const u = await r.json(); document.getElementById('quien').textContent = '👤 '+u.usuario; }
+  cargarMisStats();
+  conectar();
+}
+async function cargarMisStats(){
+  try{
+    const r = await fetch('/api/mis-stats');
+    if (!r.ok) return;
+    const {stats} = await r.json();
+    document.getElementById('misStats').style.display = '';
+    document.getElementById('stHoy').textContent = stats.hoy.cocinados;
+    document.getElementById('stSemana').textContent = stats.semana.cocinados;
+    document.getElementById('stTotal').textContent = stats.total.cocinados;
+  }catch(_){}
+}
+function conectar(){
+  const sse = new EventSource('/api/eventos-staff');
+  sse.onopen = ()=>setConexion(true);
+  sse.onerror = ()=>setConexion(false);
+  sse.onmessage = ev=>{ render(JSON.parse(ev.data)); cargarMisStats(); };
+}
+function setConexion(ok){
+  const el = document.getElementById('conexion');
+  el.textContent = ok ? '● Conectado' : '● Reconectando...';
+  el.classList.toggle('off', !ok);
+}
+
+function render({pedidos}){
+  const activos = pedidos.filter(p=>p.estado==='ordenado'||p.estado==='cocinado');
+  for (const p of activos){
+    if (!idsConocidos.has(p.id)){
+      idsConocidos.add(p.id);
+      if (!primeraCarga){ beep(); toast(`🔔 Nuevo pedido #${p.id} — Mesa ${p.mesa}`); }
+    }
+  }
+  primeraCarga = false;
+
+  const cont = document.getElementById('ordenes');
+  if (activos.length===0){
+    cont.innerHTML = `<div class="vacio"><span class="ico">🍳</span>Sin pedidos pendientes.<br>Cuando un cliente confirme desde su mesa, el pedido aparecerá aquí al instante.</div>`;
+    return;
+  }
+  cont.innerHTML = activos.map(p=>{
+    const chip = p.estado==='ordenado'
+      ? '<span class="estado-chip chip-ordenado">Recibido</span>'
+      : '<span class="estado-chip chip-cocinado">Cocinado</span>';
+    const boton = p.estado==='ordenado'
+      ? `<button class="btn btn-rojo btn-full" onclick="avanzar(${p.id},'cocinado')">🍳 Marcar pedido cocinado</button>`
+      : `<button class="btn btn-verde btn-full" onclick="avanzar(${p.id},'listo')">🛎️ Listo para entregar (avisar al mozo)</button>`;
+    return `<div class="orden ${p.estado}">
+      <div class="top"><span class="mesa">Mesa ${esc(p.mesa)} · #${p.id}</span>${chip}</div>
+      <div class="hora">🕐 Recibido ${p.hora}</div>
+      <ul>${p.items.map(it=>`<li><span><span class="cant">${it.cantidad}×</span>${esc(it.nombre)}</span></li>`).join('')}</ul>
+      ${p.nota?`<div class="nota">📝 ${esc(p.nota)}</div>`:''}
+      ${boton}
+    </div>`;
+  }).join('');
+}
+
+async function avanzar(id, estado){
+  const r = await fetch(`/api/pedidos/${id}/estado`,{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({estado})
+  });
+  if(!r.ok){
+    const e = await r.json();
+    toast('⚠️ '+e.error);
+    if (r.status===401) location.href='/login?next=/cocina';
+  }
+}
+async function salir(){ await fetch('/api/logout',{method:'POST'}); location.href='/login'; }
+
+let audioCtx = null;
+function beep(){
+  try{
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    [0,.18].forEach((t,i)=>{
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination);
+      o.frequency.value = i?880:660; o.type='sine';
+      g.gain.setValueAtTime(.25, audioCtx.currentTime+t);
+      g.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime+t+.15);
+      o.start(audioCtx.currentTime+t); o.stop(audioCtx.currentTime+t+.16);
+    });
+  }catch(_){}
+}
+function esc(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 3000);
+}
+init();
+</script>
+</body>
+</html>

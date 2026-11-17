@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>La Sazón — Tu mesa</title>
+<link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<div class="cliente-wrap">
+
+  <div id="pantalla-mesa" style="display:none">
+    <div class="card" style="text-align:center;margin-top:40px">
+      <h2 style="margin-bottom:6px">🍽️ Restaurante La Sazón</h2>
+      <p style="color:var(--gris);font-size:14px;margin-bottom:18px">No detectamos tu mesa. Selecciónala para continuar:</p>
+      <select id="selMesa" style="margin-bottom:14px"></select>
+      <button class="btn btn-rojo btn-full" onclick="elegirMesa()">Ver la carta</button>
+    </div>
+  </div>
+
+  <div id="pantalla-menu" style="display:none">
+    <div class="resto-header">
+      <h2>Restaurante La Sazón</h2>
+      <span class="mesa-chip" id="chipMesa"></span>
+      <div class="acciones-mesa">
+        <button class="btn btn-blanco" onclick="llamar('mozo')">🙋 Llamar mozo</button>
+        <button class="btn btn-blanco" onclick="llamar('cuenta')">🧾 Pedir cuenta</button>
+      </div>
+    </div>
+    <div class="cats" id="cats"></div>
+    <div id="listaPlatos"></div>
+  </div>
+
+  <div id="pantalla-resumen" style="display:none">
+    <div class="card">
+      <h3 style="margin-bottom:10px">🧾 Tu pedido — <span id="resMesa"></span></h3>
+      <div id="resumenItems"></div>
+      <div class="total-row"><span>Total</span><span id="resTotal"></span></div>
+      <textarea id="notaPedido" rows="3" placeholder="Sugerencias para tu plato (opcional): sin ají, término medio, sin cebolla..." style="margin-bottom:14px"></textarea>
+      <button class="btn btn-rojo btn-full" id="btnConfirmar" onclick="confirmarPedido()">✅ Confirmar pedido</button>
+      <button class="btn btn-ghost btn-full" style="margin-top:10px" onclick="mostrar('menu')">← Seguir agregando</button>
+    </div>
+  </div>
+
+  <div id="pantalla-track" style="display:none">
+    <div class="card">
+      <h3>Pedido #<span id="trackId"></span> — <span id="trackMesa"></span></h3>
+      <p style="color:var(--gris);font-size:14px;margin-top:4px">Sigue tu pedido en vivo.</p>
+      <div class="tracker" id="tracker"></div>
+      <div id="trackItems" style="border-top:1px solid var(--borde);padding-top:12px"></div>
+      <div class="acciones-mesa">
+        <button class="btn btn-blanco" onclick="llamar('mozo')">🙋 Llamar mozo</button>
+        <button class="btn btn-blanco" onclick="llamar('cuenta')">🧾 Pedir cuenta</button>
+      </div>
+      <button class="btn btn-rojo btn-full" id="btnNuevoPedido" style="display:none;margin-top:12px" onclick="nuevoPedido()">🍽️ Hacer otro pedido</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="carrito-bar" id="carritoBar">
+  <button class="btn btn-rojo" onclick="verResumen()">🛒 Ver pedido — <span id="carritoInfo"></span></button>
+</div>
+
+<script>
+const FASES = [
+  {key:'ordenado',  titulo:'Pedido tomado',        desc:'La cocina recibió tu pedido',                icono:'📝'},
+  {key:'cocinado',  titulo:'Pedido cocinado',      desc:'Tus platos ya están preparados',             icono:'🍳'},
+  {key:'listo',     titulo:'Pedido por entregar',  desc:'El mozo está llevando tu pedido a la mesa',  icono:'🛎️'},
+  {key:'entregado', titulo:'Pedido entregado',     desc:'¡Buen provecho!',                            icono:'😋'},
+];
+
+let MENU = [], PLATOS = new Map();
+let mesa = null, carrito = {}, catActiva = null;
+let pedidoId = Number(localStorage.getItem('qrp_pedidoId')) || null;
+let ultimoPedido = null;
+
+function detectarMesa(){
+  const m = location.pathname.match(/^\/mesa\/(\d+)/);
+  if (m) return m[1];
+  const q = new URLSearchParams(location.search).get('mesa');
+  if (q) return q;
+  return localStorage.getItem('qrp_mesa') || null;
+}
+function mostrar(p){
+  ['mesa','menu','resumen','track'].forEach(x=>{
+    document.getElementById('pantalla-'+x).style.display = (x===p?'block':'none');
+  });
+  actualizarBarra();
+}
+
+async function init(){
+  const r = await fetch('/api/menu');
+  MENU = (await r.json()).menu;
+  PLATOS = new Map(MENU.flatMap(c=>c.items).map(p=>[p.id,p]));
+  catActiva = MENU.length ? MENU[0].cat : null;
+  document.getElementById('selMesa').innerHTML =
+    Array.from({length:12},(_,i)=>`<option value="${i+1}">Mesa ${i+1}</option>`).join('');
+  mesa = detectarMesa();
+
+  if (pedidoId){
+    const rp = await fetch('/api/pedidos/'+pedidoId);
+    if (rp.ok){
+      const {pedido} = await rp.json();
+      if (pedido.estado !== 'entregado'){
+        mesa = pedido.mesa; conectarSSE(); mostrar('track'); renderTrack(pedido); return;
+      }
+    }
+    pedidoId = null; localStorage.removeItem('qrp_pedidoId');
+  }
+  if (!mesa){ mostrar('mesa'); return; }
+  entrarAlMenu();
+}
+function elegirMesa(){
+  mesa = document.getElementById('selMesa').value;
+  entrarAlMenu();
+}
+function entrarAlMenu(){
+  localStorage.setItem('qrp_mesa', mesa);
+  document.getElementById('chipMesa').textContent = 'Mesa ' + mesa;
+  mostrar('menu'); renderMenu();
+}
+
+/* ---- Carta ---- */
+function renderMenu(){
+  document.getElementById('cats').innerHTML = MENU.map(c=>
+    `<button class="cat-btn ${c.cat===catActiva?'active':''}" onclick="setCat('${c.cat.replace(/'/g,"\\'")}')">${c.cat}</button>`).join('');
+  const grupo = MENU.find(c=>c.cat===catActiva);
+  document.getElementById('listaPlatos').innerHTML = (grupo?grupo.items:[]).map(pl=>{
+    const cant = carrito[pl.id]||0;
+    return `<div class="plato">
+      <div class="emoji">${pl.emoji}</div>
+      <div class="info"><h4>${esc(pl.nombre)}</h4><p>${esc(pl.descripcion)}</p>
+        <div class="precio">S/ ${pl.precio.toFixed(2)}</div></div>
+      <div class="qty">
+        ${cant>0?`<button class="menos" onclick="cambiar(${pl.id},-1)">−</button><span>${cant}</span>`:''}
+        <button onclick="cambiar(${pl.id},1)">+</button>
+      </div></div>`;
+  }).join('');
+  actualizarBarra();
+}
+function setCat(c){ catActiva=c; renderMenu(); }
+function cambiar(id,d){
+  carrito[id]=(carrito[id]||0)+d;
+  if(carrito[id]<=0) delete carrito[id];
+  renderMenu();
+}
+const totalItems = ()=>Object.values(carrito).reduce((a,b)=>a+b,0);
+const totalSoles = ()=>Object.entries(carrito).reduce((s,[id,c])=>s+PLATOS.get(Number(id)).precio*c,0);
+function actualizarBarra(){
+  const n = totalItems();
+  const enMenu = document.getElementById('pantalla-menu').style.display!=='none';
+  document.getElementById('carritoBar').classList.toggle('show', n>0 && enMenu);
+  if(n>0) document.getElementById('carritoInfo').textContent = `${n} ítem${n>1?'s':''} · S/ ${totalSoles().toFixed(2)}`;
+}
+
+/* ---- Resumen / confirmación ---- */
+function verResumen(){
+  document.getElementById('resMesa').textContent = 'Mesa ' + mesa;
+  document.getElementById('resumenItems').innerHTML = Object.entries(carrito).map(([id,c])=>{
+    const pl = PLATOS.get(Number(id));
+    return `<div class="resumen-item"><span>${c}× ${esc(pl.nombre)}</span><span>S/ ${(pl.precio*c).toFixed(2)}</span></div>`;
+  }).join('');
+  document.getElementById('resTotal').textContent = 'S/ ' + totalSoles().toFixed(2);
+  mostrar('resumen');
+}
+async function confirmarPedido(){
+  const btn = document.getElementById('btnConfirmar');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  try{
+    const r = await fetch('/api/pedidos',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        mesa,
+        items: Object.entries(carrito).map(([id,cant])=>({id:Number(id),cant})),
+        nota: document.getElementById('notaPedido').value.trim()
+      })
+    });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error||'Error');
+    pedidoId = d.pedido.id;
+    localStorage.setItem('qrp_pedidoId', pedidoId);
+    carrito = {};
+    document.getElementById('notaPedido').value='';
+    conectarSSE();
+    mostrar('track'); renderTrack(d.pedido);
+    toast('✅ Pedido enviado a la cocina');
+  }catch(e){ toast('⚠️ '+e.message); }
+  btn.disabled = false; btn.textContent = '✅ Confirmar pedido';
+}
+
+/* ---- Seguimiento en vivo ---- */
+let sse = null, estadoAnterior = null;
+function conectarSSE(){
+  if (sse) return;
+  sse = new EventSource('/api/eventos');
+  sse.onmessage = async ev=>{
+    const {pedidos} = JSON.parse(ev.data);
+    const p = pedidos.find(x=>x.id===pedidoId);
+    if (p && ultimoPedido && p.estado !== ultimoPedido.estado){
+      const rp = await fetch('/api/pedidos/'+pedidoId);
+      if (rp.ok) renderTrack((await rp.json()).pedido);
+    }
+  };
+}
+function renderTrack(p){
+  ultimoPedido = p;
+  document.getElementById('trackId').textContent = p.id;
+  document.getElementById('trackMesa').textContent = 'Mesa ' + p.mesa;
+  const idx = FASES.findIndex(f=>f.key===p.estado);
+  document.getElementById('tracker').innerHTML = FASES.map((f,i)=>{
+    const done = i<idx || (i===idx && i===FASES.length-1);
+    const cls = done?'done':(i===idx?'current':'pendiente');
+    return `<div class="fase ${cls}">
+      <div class="dot">${done?'✓':f.icono}</div>
+      <div><h4>${f.titulo}</h4><p>${f.desc}</p></div></div>`;
+  }).join('');
+  document.getElementById('trackItems').innerHTML =
+    '<p style="font-size:13px;color:var(--gris);margin-bottom:6px">Detalle:</p>' +
+    p.items.map(it=>`<div class="resumen-item"><span>${it.cantidad}× ${esc(it.nombre)}</span><span>S/ ${(it.precio*it.cantidad).toFixed(2)}</span></div>`).join('') +
+    `<div class="total-row"><span>Total</span><span>S/ ${p.total.toFixed(2)}</span></div>` +
+    (p.nota ? `<div class="nota">📝 Tu sugerencia: ${esc(p.nota)}</div>` : '');
+  document.getElementById('btnNuevoPedido').style.display = p.estado==='entregado'?'block':'none';
+  if (estadoAnterior && estadoAnterior!==p.estado){
+    const f = FASES[idx];
+    toast(f.icono+' '+f.titulo);
+    if (navigator.vibrate) navigator.vibrate(200);
+  }
+  estadoAnterior = p.estado;
+}
+function nuevoPedido(){
+  pedidoId = null; estadoAnterior = null; ultimoPedido = null;
+  localStorage.removeItem('qrp_pedidoId');
+  mostrar('menu'); renderMenu();
+}
+
+/* ---- Llamar al mozo / pedir cuenta ---- */
+async function llamar(tipo){
+  if (!mesa) return;
+  try{
+    const r = await fetch('/api/llamadas',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({mesa, tipo})
+    });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error||'Error');
+    toast(d.repetida ? '⏳ Ya avisamos al mozo, ya viene'
+        : tipo==='cuenta' ? '🧾 Cuenta solicitada, el mozo ya viene' : '🙋 Mozo llamado, ya viene');
+    if (navigator.vibrate) navigator.vibrate(120);
+  }catch(e){ toast('⚠️ '+e.message); }
+}
+
+function esc(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 2800);
+}
+init();
+</script>
+</body>
+</html>

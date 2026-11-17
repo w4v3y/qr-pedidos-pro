@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mozo — QR Pedidos</title>
+<link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<div class="panel" style="max-width:560px">
+  <div class="topbar">
+    <div>
+      <h2>🤵 Alertas del Mozo</h2>
+      <p class="sub">Platos listos para llevar, llamadas de mesa y pedidos de cuenta.</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="estado-conexion" id="conexion">● Conectado</span>
+      <button class="btn btn-carbon btn-mini" onclick="salir()">Salir</button>
+    </div>
+  </div>
+  <div class="kpis" id="misStats" style="display:none">
+    <div class="kpi"><div class="valor" id="stHoy">—</div><div class="etiqueta">Entregas hoy</div></div>
+    <div class="kpi"><div class="valor" id="stLlamadas">—</div><div class="etiqueta">Llamadas atendidas hoy</div></div>
+    <div class="kpi"><div class="valor" id="stSemana">—</div><div class="etiqueta">Entregas 7 días</div></div>
+  </div>
+  <div id="alertas"></div>
+</div>
+
+<script>
+let clavesAlertadas = new Set(), primeraCarga = true;
+
+async function cargarMisStats(){
+  try{
+    const r = await fetch('/api/mis-stats');
+    if (!r.ok) return;
+    const {stats} = await r.json();
+    document.getElementById('misStats').style.display = '';
+    document.getElementById('stHoy').textContent = stats.hoy.entregados;
+    document.getElementById('stLlamadas').textContent = stats.hoy.llamadas;
+    document.getElementById('stSemana').textContent = stats.semana.entregados;
+  }catch(_){}
+}
+function conectar(){
+  const sse = new EventSource('/api/eventos-staff');
+  sse.onopen = ()=>setConexion(true);
+  sse.onerror = ()=>setConexion(false);
+  sse.onmessage = ev=>{ render(JSON.parse(ev.data)); cargarMisStats(); };
+}
+cargarMisStats();
+function setConexion(ok){
+  const el = document.getElementById('conexion');
+  el.textContent = ok ? '● Conectado' : '● Reconectando...';
+  el.classList.toggle('off', !ok);
+}
+
+function render({pedidos, llamadas}){
+  const listos = pedidos.filter(p=>p.estado==='listo');
+  const nuevas = [];
+  for (const p of listos){
+    const k = 'p'+p.id;
+    if (!clavesAlertadas.has(k)){ clavesAlertadas.add(k); if(!primeraCarga) nuevas.push(`🛎️ Pedido #${p.id} listo — Mesa ${p.mesa}`); }
+  }
+  for (const l of llamadas){
+    const k = 'l'+l.id;
+    if (!clavesAlertadas.has(k)){
+      clavesAlertadas.add(k);
+      if(!primeraCarga) nuevas.push(l.tipo==='cuenta' ? `🧾 Mesa ${l.mesa} pide la cuenta` : `🙋 Mesa ${l.mesa} llama al mozo`);
+    }
+  }
+  if (nuevas.length){ beep(); toast(nuevas[0]); if (navigator.vibrate) navigator.vibrate([200,100,200]); }
+  primeraCarga = false;
+
+  const cont = document.getElementById('alertas');
+  if (listos.length===0 && llamadas.length===0){
+    cont.innerHTML = `<div class="vacio" style="display:block"><span class="ico">🤵</span>Sin alertas por ahora.<br>Aquí aparecerán los platos listos, las llamadas de mesa y los pedidos de cuenta.</div>`;
+    return;
+  }
+  const htmlLlamadas = llamadas.map(l=>{
+    const esCuenta = l.tipo==='cuenta';
+    return `<div class="alerta-mozo ${esCuenta?'cuenta':'llamada'}">
+      <div class="mesa-grande">${esc(l.mesa)}<small>MESA</small></div>
+      <div class="detalle">
+        <h3>${esCuenta?'🧾 Piden la cuenta':'🙋 Llaman al mozo'}</h3>
+        <p>Solicitado a las ${l.hora}</p>
+        <button class="btn btn-carbon btn-mini" style="margin-top:8px" onclick="atender(${l.id})">✅ Atendido</button>
+      </div>
+    </div>`;
+  }).join('');
+  const htmlListos = listos.map(p=>{
+    const resumen = p.items.map(it=>`${it.cantidad}× ${esc(it.nombre)}`).join(' · ');
+    return `<div class="alerta-mozo">
+      <div class="mesa-grande">${esc(p.mesa)}<small>MESA</small></div>
+      <div class="detalle">
+        <h3>🛎️ Pedido #${p.id} listo en cocina</h3>
+        <p>${resumen}</p>
+        <button class="btn btn-carbon" style="margin-top:10px" onclick="entregar(${p.id})">✅ Entregado en mesa</button>
+      </div>
+    </div>`;
+  }).join('');
+  cont.innerHTML = htmlLlamadas + htmlListos;
+}
+
+async function entregar(id){
+  const r = await fetch(`/api/pedidos/${id}/estado`,{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({estado:'entregado'})
+  });
+  if(!r.ok){
+    const e = await r.json(); toast('⚠️ '+e.error);
+    if (r.status===401) location.href='/login?next=/mozo';
+  } else toast('✅ Entrega registrada');
+}
+async function atender(id){
+  const r = await fetch(`/api/llamadas/${id}/atender`,{method:'POST'});
+  if(!r.ok){
+    const e = await r.json(); toast('⚠️ '+e.error);
+    if (r.status===401) location.href='/login?next=/mozo';
+  }
+}
+async function salir(){ await fetch('/api/logout',{method:'POST'}); location.href='/login'; }
+
+let audioCtx = null;
+function beep(){
+  try{
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    [0,.15,.3].forEach(t=>{
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination);
+      o.frequency.value = 990; o.type='triangle';
+      g.gain.setValueAtTime(.3, audioCtx.currentTime+t);
+      g.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime+t+.12);
+      o.start(audioCtx.currentTime+t); o.stop(audioCtx.currentTime+t+.13);
+    });
+  }catch(_){}
+}
+function esc(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 3200);
+}
+conectar();
+</script>
+</body>
+</html>
